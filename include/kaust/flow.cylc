@@ -1,0 +1,73 @@
+#!jinja2
+{% set cpuPerNode=192 %}
+{% set nio_groups=4 %}
+{% set nio_tasks_per_group=16 %}
+{% set nproc_atm=1152 %}
+{% set cpuATM = nio_groups * nio_tasks_per_group + nproc_atm  %}
+{% set projectid = "k10201" %}
+
+[runtime]
+    [[root]]
+        init-script = """
+          module unload  intel cray-netcdf
+          module load intel/2023.1.0
+          ROOT_DIR=/project/k10036/hari/compilationScripts
+          export HDF5=$ROOT_DIR/hdf5
+          export NETCDF=$ROOT_DIR/netcdf
+          export PNETCDF=$ROOT_DIR/pnetcdf
+          GLIBS=$ROOT_DIR/WRF_LIBS_2026
+          export PATH=$NETCDF/bin:$PNETCDF/bin:$HDF5/bin:$PATH
+          export LD_LIBRARY_PATH=$NETCDF/lib:$PNETCDF/lib:$HDF5/lib:$GLIBS/lib:$LD_LIBRARY_PATH
+          export INCLUDE_PATH=$NETCDF/include:$PNETCDF/include:$HDF5/include:$INCLUDE_PATH
+        """
+        platform=shaheen
+        [[[environment]]]
+            WPS_DIR=${MY_SW}/S2S/WPS
+            WRF_DIR=${MY_SW}/S2S/WRF
+
+    [[end]]
+        platform=localhost
+
+    [[geogrid,ungrib]]
+        execution time limit = PT30M
+        [[[environment]]]
+        [[[directives]]]
+            --account={{projectid}}
+            --nodes = 1
+            --ntasks = 1
+
+
+    [[metgrid]]
+        execution time limit = PT3H
+        [[[environment]]]
+            run_cmd = "srun -n 1"
+        [[[directives]]]
+            --account={{projectid}}
+            --nodes = 1
+            --ntasks = 1
+
+
+    [[real]]
+        execution time limit = PT12H
+        [[[environment]]]
+            run_cmd = "srun -n {{ cpuPerNode }}"
+            nio_tasks_per_group=0
+            nio_groups=0
+
+        [[[directives]]]
+            --account={{projectid}}
+            --nodes = 1
+            --ntasks = {{ cpuPerNode }}
+
+    [[wrf]]
+        execution time limit = PT23H
+        [[[directives]]]
+            --account={{projectid}}
+            {% set nodes = (cpuATM + cpuPerNode - 1) // cpuPerNode %}
+            --nodes={{ nodes }}
+            --ntasks={{ cpuATM }}
+        [[[environment]]]
+            FI_CXI_RX_MATCH_MODE=hybrid
+            run_cmd = "srun -n {{ cpuATM }} --distribution=block:block --hint=nomultithread"
+            nio_groups={{ nio_groups }}
+            nio_tasks_per_group={{ nio_tasks_per_group }}

@@ -1,0 +1,137 @@
+#!Jinja2
+{% from "site.cylc" import ERA5PATH, ADMIN_EMAILS, WPS_PATH, WRF_PATH, DATA_GEOG_PATH, SITE, GNU_PARALLEL %}
+
+[task parameters]
+
+[scheduling]
+    initial cycle point = 2024-06-01T00:00:00
+    final cycle point = 2025-12-01T00:00:00
+
+    [[graph]]
+        P1M = """
+            @wall_clock => geogrid => metgrid
+            @wall_clock => ungrib => metgrid
+            metgrid => real & wrf[-P1M] => wrf => end
+        """
+
+[runtime]
+    [[root]]
+        [[[mail]]]
+            to = {{ ADMIN_EMAILS }}
+        [[[events]]]
+            mail events = failed
+        [[[environment]]]
+            ETC_DIR=${CYLC_WORKFLOW_RUN_DIR}/etc
+            START_DATE=${CYLC_TASK_CYCLE_POINT}
+            END_DATE=$(isodatetime ${CYLC_TASK_CYCLE_POINT} --offset P1M)
+            restart_interval=$(isodatetime --as-total=m ${START_DATE} ${END_DATE})
+
+            syyyy=${START_DATE:0:4}
+            smm=${START_DATE:4:2}
+            sdd=${START_DATE:6:2}
+            shh=${START_DATE:9:2}
+
+            eyyyy=${END_DATE:0:4}
+            emm=${END_DATE:4:2}
+            edd=${END_DATE:6:2}
+            ehh=${END_DATE:9:2}
+
+            restart=.true.
+
+    [[end]]
+        script = """
+            echo "End of cycle reached"
+        """
+
+    [[wrf]]
+        script = """
+            set -x
+            rm -rf *
+            cp {{WRF_PATH}}/* .
+            if [ "${CYLC_WORKFLOW_INITIAL_CYCLE_POINT}" == "${START_DATE}" ]; then
+                export restart=.false.
+            else
+                ln -sf $CYLC_TASK_SHARE_CYCLE_DIR/restart/$CYLC_TASK_CYCLE_POINT/wrf* .
+            fi
+            envsub $ETC_DIR/namelist.input namelist.input
+            $run_cmd wrf.exe
+            mkdir -p $CYLC_TASK_SHARE_CYCLE_DIR/restart/$END_DATE
+            mv wrfrst* $CYLC_TASK_SHARE_CYCLE_DIR/restart/$END_DATE
+        """
+
+    [[real]]
+        script = """
+            set -x
+            rm -rf *
+            cp {{WRF_PATH}}/* .
+            envsub $ETC_DIR/namelist.input namelist.input
+            ln -sf $CYLC_TASK_SHARE_CYCLE_DIR/met_em* .
+            $run_cmd real.exe
+            mv wrf*_d?? $CYLC_TASK_SHARE_CYCLE_DIR
+        """
+
+    [[metgrid]]
+        script = """
+            set -x
+            CSTART_DATE=$START_DATE
+            k=0
+            while [[ "${CSTART_DATE:0:8}" != "${END_DATE:0:8}" ]]; do
+                k=$((k+1))
+                CEND_DATE=$(isodatetime ${CSTART_DATE} --offset P1D)
+                export syyyy=${CSTART_DATE:0:4}
+                export smm=${CSTART_DATE:4:2}
+                export sdd=${CSTART_DATE:6:2}
+                export shh=${CSTART_DATE:9:2}
+                export eyyyy=${CEND_DATE:0:4}
+                export emm=${CEND_DATE:4:2}
+                export edd=${CEND_DATE:6:2}
+                export ehh=${CEND_DATE:9:2}
+                mdir=batch${k}
+                mkdir -p $mdir/metgrid
+                cd $mdir
+                cp $ETC_DIR/METGRID.TBL metgrid
+                envsub $ETC_DIR/namelist.wps namelist.wps
+                ln -sf {{WPS_PATH}}/metgrid/metgrid.exe .
+                ln -sf $CYLC_TASK_SHARE_CYCLE_DIR/FILE* .
+                ln -sf $CYLC_TASK_SHARE_CYCLE_DIR/geo_em*.nc .
+                cd -
+                CSTART_DATE=$CEND_DATE
+            done
+            # Run metgrid.exe in each directory, using all available cores
+            seq 1 $k | {{GNU_PARALLEL}} -j 0 'cd batch{} && ./metgrid.exe'
+            for f in batch*/metgrid.log; do grep "Successful completion" $f; done
+            for i in $(seq 1 $k); do mv -f batch${i}/met_em.d??.*.nc $CYLC_TASK_SHARE_CYCLE_DIR; done
+            rm -rf *
+        """
+
+    [[geogrid]]
+        script = """
+            set -x
+            rm -rf geogrid
+            mkdir geogrid
+            cp $ETC_DIR/GEOGRID.TBL geogrid/
+            envsub $ETC_DIR/namelist.wps namelist.wps
+            ln -sf {{DATA_GEOG_PATH}} WPS_GEOG
+            {{WPS_PATH}}/geogrid/geogrid.exe
+            grep "Successful completion" geogrid.log
+            mv geo_em.d??.nc $CYLC_TASK_SHARE_CYCLE_DIR
+            rm -rf *
+        """
+
+    [[ungrib]]
+        script = """
+            set -x
+            ln -sf {{WPS_PATH}}/ungrib .
+            ln -sf $ETC_DIR/Vtable .
+            envsub $ETC_DIR/namelist.wps namelist.wps
+            {{WPS_PATH}}/link_grib.csh \
+            {{ERA5PATH}}/$syyyy/${syyyy}_${smm}_{prs,sfc}.grib \
+            {{ERA5PATH}}/$eyyyy/${eyyyy}_${emm}_{prs,sfc}.grib
+            ./ungrib/ungrib.exe
+            grep "Successful completion" ungrib.log
+            mv FILE* $CYLC_TASK_SHARE_CYCLE_DIR
+            rm -rf *
+        """
+
+
+{% include 'include/' ~ SITE ~ '/flow.cylc' %}

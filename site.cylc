@@ -1,0 +1,7 @@
+{% set ERA5PATH="/project/k10036/hari/group_data/1950-2022" %}
+{% set SITE = "kaust" %}
+{% set ADMIN_EMAILS = "prajeesh.athippattagopinathan@kaust.edu.sa" %}
+{% set WPS_PATH = "/project/k10036/hari/compilationScripts/WPS-4.6.0" %}
+{% set WRF_PATH = "/project/k10036/hari/compilationScripts/ERA5_hist_AP" %}
+{% set DATA_GEOG_PATH = "/project/k10035/athippp/DATA/WPS_GEOG/WPS_GEOG" %}
+{% set GNU_PARALLEL = "/scratch/athippp/iops/micromamba/envs/base12/bin/parallel" %}

@@ -1,0 +1,36 @@
+&share
+ wrf_core = 'ARW',
+ max_dom = 2,
+ start_date = "${syyyy}-${smm}-${sdd}_${shh}:00:00","${syyyy}-${smm}-${sdd}_${shh}:00:00","${syyyy}-${smm}-${sdd}_${shh}:00:00","${syyyy}-${smm}-${sdd}_${shh}:00:00"
+ end_date = "${eyyyy}-${emm}-${edd}_${ehh}:00:00","${eyyyy}-${emm}-${edd}_${ehh}:00:00","${eyyyy}-${emm}-${edd}_${ehh}:00:00","${eyyyy}-${emm}-${edd}_${ehh}:00:00"
+ interval_seconds = 21600
+/
+
+&geogrid
+ parent_id         =   1,   1,  2, 3,
+ parent_grid_ratio =   1,   3,  3, 3,
+ i_parent_start    =   1, 443,  152 139,
+ j_parent_start    =   1, 122,  251, 109,
+ e_we              =  832, 802, 732, 298,
+ e_sn              =  468, 676,  1272, 298,
+ !geog_data_res     = 'default','default','default','modis_30s+30s',
+ dx = 12000
+ dy = 12000
+ map_proj = 'mercator',
+ ref_lat   = 21.4,
+ ref_lon   = 24.5,
+ truelat1  = 30.0,
+ truelat2  = 0,
+ stand_lon = 24.5,
+ geog_data_path = 'WPS_GEOG'
+/
+
+&ungrib
+ out_format = 'WPS',
+ prefix = 'FILE',
+/
+
+&metgrid
+ fg_name = 'FILE'
+ io_form_metgrid = 2,
+/
