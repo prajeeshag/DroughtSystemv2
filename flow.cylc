@@ -1,5 +1,5 @@
 #!Jinja2
-{% from "site.cylc" import ERA5PATH, ADMIN_EMAILS, WPS_PATH, WRF_PATH, DATA_GEOG_PATH, SITE, GNU_PARALLEL %}
+{% from "site.cylc" import ERA5PATH, ADMIN_EMAILS, WPS_PATH, WRF_PATH, DATA_GEOG_PATH, SITE, GNU_PARALLEL, CDO, PYTHON, NCL %}
 
 [task parameters]
 
@@ -11,7 +11,10 @@
         P1M = """
             @wall_clock => geogrid => metgrid
             @wall_clock => ungrib => metgrid
-            metgrid => real & wrf[-P1M] => wrf => end
+            metgrid => real & wrf[-P1M] => wrf 
+            wrf => add_coords => postprocess => update_archive
+            update_archive => spi
+            update_archive => spei
         """
 
 [runtime]
@@ -21,10 +24,18 @@
         [[[events]]]
             mail events = failed
         [[[environment]]]
+            NCL={{NCL}}
+
             ETC_DIR=${CYLC_WORKFLOW_RUN_DIR}/etc
             START_DATE=${CYLC_TASK_CYCLE_POINT}
             END_DATE=$(isodatetime ${CYLC_TASK_CYCLE_POINT} --offset P1M)
             restart_interval=$(isodatetime --as-total=m ${START_DATE} ${END_DATE})
+            ARCHIVE_DIR=/scratch/athippp/ARCHIVE/DroughtSystemv2/
+            DATA_ROOT=/home/athippp/DATA/droughtSystemv2
+
+            UPDATES_DIR=$DATA_ROOT/updates 
+            HIST_DIR=$DATA_ROOT/hist
+            grid=$HIST_DIR/ERA5_historical_RAINNC_monthly_1980-2024.nc
 
             syyyy=${START_DATE:0:4}
             smm=${START_DATE:4:2}
@@ -43,6 +54,65 @@
             echo "End of cycle reached"
         """
 
+    [[spi]]
+        platform=localhost
+        script = """
+            set -x
+            cdo -O -mergetime [ -setvar,RAINNC : $UPDATES_DIR/RAINNCVMEAN_d02_*.nc ] updates.nc
+            cdo -O -mergetime $HIST_DIR/ERA5_historical_RAINNC_monthly_1980-2024.nc updates.nc RAINNC.nc
+            spi.sh RAINNC.nc SPI.nc spi
+        """
+
+    [[spei]]
+        platform=localhost
+        script = """
+            set -x
+            cdo -O -mergetime [ -setvar,RAINNC : $UPDATES_DIR/RAINNCVMEAN_d02_*.nc ] updates.nc
+            cdo -O -mergetime $HIST_DIR/ERA5_historical_RAINNC_monthly_1980-2024.nc updates.nc RAINNC.nc
+
+            cdo -O -mergetime [ $UPDATES_DIR/PET_d02_*.nc ] pet_updates.nc
+            cdo -O -mergetime $HIST_DIR/ERA5_historical_PET_monthly_1980-2024.nc pet_updates.nc PET.nc
+
+            cdo -O -sub RAINNC.nc PET.nc PRE-PET.nc
+
+            spi.sh PRE-PET.nc SPEI.nc spei
+        """
+
+    [[update_archive]]
+        platform=localhost
+        script = """
+            set -x
+            rsync -a -P shaheen:$ARCHIVE_DIR/$START_DATE/processed/*.nc .
+            for file in *.nc; do
+                cdo -remapbil,$grid $file $UPDATES_DIR/$file
+            done
+            pet.sh $UPDATES_DIR/T2MIN_d02_${syyyy}${smm}.nc $UPDATES_DIR/T2MAX_d02_${syyyy}${smm}.nc PET.nc
+            mv PET.nc $UPDATES_DIR/PET_d02_${syyyy}${smm}.nc
+        """
+
+    [[add_coords]]
+        script = """
+            set -xe
+            cd $ARCHIVE_DIR/$START_DATE/
+            mkdir -p tmp
+            for d in d01 d02; do
+                for f in wrfdiag_${d}_*; do
+                    {{PYTHON}} $ETC_DIR/add_coords.py $f $CYLC_TASK_SHARE_CYCLE_DIR/geo_em.${d}.nc tmp/
+                done
+            done
+            mv tmp/* .
+        """
+
+    [[postprocess]]
+        script = """
+            set -x
+            cd $ARCHIVE_DIR/$START_DATE/
+            mkdir -p processed
+            for var in RAINCVMEAN RAINNCVMEAN T2MAX T2MIN; do
+                {{CDO}} -monmean -mergetime [ -selvar,$var : wrfdiag_d02_${syyyy}-${smm}* ] processed/${var}_d02_${syyyy}${smm}.nc
+            done
+        """
+
     [[wrf]]
         script = """
             set -x
@@ -51,12 +121,15 @@
             if [ "${CYLC_WORKFLOW_INITIAL_CYCLE_POINT}" == "${START_DATE}" ]; then
                 export restart=.false.
             else
-                ln -sf $CYLC_TASK_SHARE_CYCLE_DIR/restart/$CYLC_TASK_CYCLE_POINT/wrf* .
+                ln -sf $CYLC_WORKFLOW_SHARE_DIR/restart/$CYLC_TASK_CYCLE_POINT/wrf* .
             fi
             envsub $ETC_DIR/namelist.input namelist.input
+            ln -sf $CYLC_TASK_SHARE_CYCLE_DIR/wrf*_d?? .
             $run_cmd wrf.exe
-            mkdir -p $CYLC_TASK_SHARE_CYCLE_DIR/restart/$END_DATE
-            mv wrfrst* $CYLC_TASK_SHARE_CYCLE_DIR/restart/$END_DATE
+            mkdir -p $CYLC_WORKFLOW_SHARE_DIR/restart/$END_DATE
+            mv wrfrst* $CYLC_WORKFLOW_SHARE_DIR/restart/$END_DATE
+            mkdir -p $ARCHIVE_DIR/$START_DATE
+            mv wrfdiag* $ARCHIVE_DIR/$START_DATE/
         """
 
     [[real]]

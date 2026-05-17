@@ -7,7 +7,8 @@
 {% set projectid = "k10201" %}
 
 [runtime]
-    [[root]]
+
+    [[ONSHAHEEN]]
         init-script = """
           module unload  intel cray-netcdf
           module load intel/2023.1.0
@@ -25,10 +26,9 @@
             WPS_DIR=${MY_SW}/S2S/WPS
             WRF_DIR=${MY_SW}/S2S/WRF
 
-    [[end]]
-        platform=localhost
 
-    [[geogrid,ungrib]]
+    [[geogrid,ungrib,postprocess, add_coords]]
+        inherit = None, ONSHAHEEN
         execution time limit = PT30M
         [[[environment]]]
         [[[directives]]]
@@ -38,6 +38,7 @@
 
 
     [[metgrid]]
+        inherit = None, ONSHAHEEN
         execution time limit = PT3H
         [[[environment]]]
             run_cmd = "srun -n 1"
@@ -48,6 +49,7 @@
 
 
     [[real]]
+        inherit = None, ONSHAHEEN
         execution time limit = PT12H
         [[[environment]]]
             run_cmd = "srun -n {{ cpuPerNode }}"
@@ -60,6 +62,7 @@
             --ntasks = {{ cpuPerNode }}
 
     [[wrf]]
+        inherit = None, ONSHAHEEN
         execution time limit = PT23H
         [[[directives]]]
             --account={{projectid}}

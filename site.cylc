@@ -5,3 +5,6 @@
 {% set WRF_PATH = "/project/k10036/hari/compilationScripts/ERA5_hist_AP" %}
 {% set DATA_GEOG_PATH = "/project/k10035/athippp/DATA/WPS_GEOG/WPS_GEOG" %}
 {% set GNU_PARALLEL = "/scratch/athippp/iops/micromamba/envs/base12/bin/parallel" %}
+{% set CDO = "/scratch/athippp/iops/micromamba/envs/base12/bin/cdo" %}
+{% set PYTHON = "/scratch/athippp/iops/micromamba/envs/base12/bin/python" %}
+{% set NCL = "/home/athippp/micromamba/envs/droughtF/bin/ncl" %}
