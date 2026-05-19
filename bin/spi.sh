@@ -8,12 +8,13 @@ set -eux
 INPUT_FILE=$1
 OUTPUT_FILE=$2
 spi=$3
+scale=$4
 
 start_year=1980
 
-long_name="Standardized Precipitation Index"
+long_name="Standardized Precipitation Index (${scale})"
 if [ "$spi" = "spei" ]; then
-    long_name="Standardized Precipitation Evapotranspiration Index"
+    long_name="Standardized Precipitation Evapotranspiration Index (${scale})"
 fi
 
 rscript=${INPUT_FILE}.R
@@ -31,7 +32,7 @@ library(doParallel)
 library(foreach)
 
 # ---- SPI Parameters ----
-SPI_scale <- 01
+SPI_scale <- $scale
 REF_START <- c($start_year, 1)
 REF_END   <- c(2015, 12)
 Start_date <- c($start_year, 1)
@@ -63,18 +64,8 @@ registerDoParallel(cl)
 
 SPI_list <- foreach(i = 1:ncol(pre), .packages = "SPEI") %dopar% {
   ts_data <- pre[, i]
-  if (all(is.na(ts_data))) {
-    rep(NA, length(ts_data))
-  } else {
-    fit <- tryCatch(
-      $spi(ts(ts_data, start = Start_date, frequency = 12),
-          scale = SPI_scale,
-          ref.start = REF_START,
-          ref.end = REF_END),
-      error = function(e) rep(NA, length(ts_data))
-    )
-    as.numeric(fit\$fitted)
-  }
+  fit <- $spi(ts(ts_data, start = Start_date, frequency = 12), scale = SPI_scale)
+  as.numeric(fit\$fitted)
 }
 
 stopCluster(cl)
