@@ -50,6 +50,15 @@
  !frames_per_auxhist22                = 1, 1,
  !io_form_auxhist22                   = 2
  force_use_old_data                  = .true.,
+
+
+ iofields_filename = 'wrf_output.txt', 'wrf_output.txt',
+ ignore_iofields_warning = .false.
+ auxhist5_outname                    = 'WRFOUT_d<domain>_<date>',
+ frames_per_auxhist5                 = 1, 1,
+ auxhist5_interval_s                 = ${WRFOUT_INTERVAL}, ${WRFOUT_INTERVAL}
+ io_form_auxhist5                    = 2
+
  /
 
 &diags

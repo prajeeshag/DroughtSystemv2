@@ -1,0 +1,4 @@
+# 3D fields, also contains some 2D fields neccesary for UPP 
++:h:5:XLAT
++:h:5:XLONG
++:h:5:SMOIS

@@ -12,9 +12,19 @@ scale=$4
 
 start_year=1980
 
+lon_name="lon"
+lat_name="lat"
+if [ "$spi" = "smi" ]; then
+  lon_name="longitude"
+  lat_name="latitude"
+fi
+
 long_name="Standardized Precipitation Index (${scale})"
 if [ "$spi" = "spei" ]; then
-    long_name="Standardized Precipitation Evapotranspiration Index (${scale})"
+  long_name="Standardized Precipitation Evapotranspiration Index (${scale})"
+elif [ "$spi" = "smi" ]; then
+  long_name="Standardized Soil Moisture Index (${scale})"
+  spi=spi
 fi
 
 rscript=${INPUT_FILE}.R
@@ -46,8 +56,8 @@ out_file="${OUTPUT_FILE}"
 cat("\nProcessing:", fname, "\n")
 
 nc <- nc_open(fpath)
-pre.lon <- ncvar_get(nc, "lon")
-pre.lat <- ncvar_get(nc, "lat")
+pre.lon <- ncvar_get(nc, "$lon_name")
+pre.lat <- ncvar_get(nc, "$lat_name")
 pre.raw <- ncvar_get(nc, "RAINNC")
 nc_close(nc)
 

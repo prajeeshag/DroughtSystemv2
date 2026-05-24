@@ -8,6 +8,11 @@
     initial cycle point = 2024-06-01T00:00:00
     final cycle point = 2025-12-01T00:00:00
 
+    [[queues]]
+        [[[spi_queue]]]
+            limit = 8
+            members = SPI
+
     [[graph]]
         P1M = """
             @wall_clock => geogrid => metgrid
@@ -16,6 +21,7 @@
             wrf => add_coords => postprocess => update_archive
             update_archive => spi<scl>
             update_archive => spei<scl>
+            update_archive => smi<scl>
         """
 
 [runtime]
@@ -37,6 +43,8 @@
             UPDATES_DIR=$DATA_ROOT/updates 
             HIST_DIR=$DATA_ROOT/hist
             grid=$HIST_DIR/ERA5_historical_RAINNC_monthly_1980-2024.nc
+            smois_grid=$HIST_DIR/SOILW_layer1_1980-2024_mon.nc
+            smois_mask=$HIST_DIR/SMOIS_mask.nc
 
             syyyy=${START_DATE:0:4}
             smm=${START_DATE:4:2}
@@ -47,6 +55,8 @@
             emm=${END_DATE:4:2}
             edd=${END_DATE:6:2}
             ehh=${END_DATE:9:2}
+
+            WRFOUT_INTERVAL=3600
 
             restart=.true.
 
@@ -59,6 +69,16 @@
         platform=localhost
         [[[environment]]]
             scl=${CYLC_TASK_PARAM_scl}
+
+    [[smi<scl>]]
+        inherit = None, SPI
+        script = """
+            set -x
+            cdo -O -setmisstoc,0 -mergetime [ -setvar,RAINNC : $UPDATES_DIR/SMOIS1_d02_*.nc ] updates.nc
+            cdo -O -setmisstoc,0 -mergetime -setvar,RAINNC $HIST_DIR/SOILW_layer1_1980-2024_mon.nc updates.nc SMOIS1.nc
+            
+            spi.sh SMOIS1.nc SMI${scl}.nc smi ${scl}
+        """
 
     [[spi<scl>]]
         inherit = None, SPI
@@ -77,7 +97,7 @@
             cdo -O -mergetime $HIST_DIR/ERA5_historical_RAINNC_monthly_1980-2024.nc updates.nc RAINNC.nc
 
             cdo -O -setmisstoc,0 -mergetime [ $UPDATES_DIR/PET_d02_*.nc ] pet_updates.nc
-            cdo -O -mergetime $HIST_DIR/ERA5_historical_PET_monthly_1980-2024.nc pet_updates.nc PET.nc
+            cdo -O -setmisstoc,0 -mergetime $HIST_DIR/ERA5_historical_PET_monthly_1980-2024.nc pet_updates.nc PET.nc
 
             cdo -O -sub RAINNC.nc PET.nc PRE-PET.nc
 
@@ -90,7 +110,18 @@
             set -x
             rsync -a -P shaheen:$ARCHIVE_DIR/$START_DATE/processed/*.nc .
             for file in *.nc; do
-                cdo -remapbil,$grid $file $UPDATES_DIR/$file
+                # if file starting is SMOIS1
+                setmiss=""
+                grid1=$grid
+                mul=""
+                mulmask=""
+                if [[ "$file" == SMOIS1* ]]; then
+                    setmiss="-setctomiss,1"
+                    grid1=$smois_grid
+                    mul="-mul"
+                    mulmask=$smois_mask
+                fi
+                cdo $mul -remapbil,$grid1 $setmiss $file $mulmask $UPDATES_DIR/$file
             done
             pet.sh $UPDATES_DIR/T2MIN_d02_${syyyy}${smm}.nc $UPDATES_DIR/T2MAX_d02_${syyyy}${smm}.nc PET.nc
             mv PET.nc $UPDATES_DIR/PET_d02_${syyyy}${smm}.nc
@@ -101,8 +132,15 @@
             set -xe
             cd $ARCHIVE_DIR/$START_DATE/
             mkdir -p tmp
+
             for d in d01 d02; do
+                {{CDO}} -O -monmean -mergetime WRFOUT_${d}_${syyyy}-${smm}-* WRFOUT_MONMEAN_${d}_${syyyy}-${smm}.nc
+            done
+
+            for d in d01 d02; do
+                {{PYTHON}} $ETC_DIR/add_coords.py WRFOUT_MONMEAN_${d}_${syyyy}-${smm}.nc $CYLC_TASK_SHARE_CYCLE_DIR/geo_em.${d}.nc tmp/ --time-string ${syyyy}-${smm}-01_00:00:00
                 for f in wrfdiag_${d}_*; do
+                    echo "Processing $f"
                     {{PYTHON}} $ETC_DIR/add_coords.py $f $CYLC_TASK_SHARE_CYCLE_DIR/geo_em.${d}.nc tmp/
                 done
             done
@@ -117,6 +155,7 @@
             for var in RAINCVMEAN RAINNCVMEAN T2MAX T2MIN; do
                 {{CDO}} -monmean -mergetime [ -selvar,$var : wrfdiag_d02_${syyyy}-${smm}* ] processed/${var}_d02_${syyyy}${smm}.nc
             done
+            {{PYTHON}} $ETC_DIR/select_lev1.py WRFOUT_MONMEAN_d02_${syyyy}-${smm}.nc processed/SMOIS1_d02_${syyyy}${smm}.nc
         """
 
     [[wrf]]
@@ -130,12 +169,13 @@
                 ln -sf $CYLC_WORKFLOW_SHARE_DIR/restart/$CYLC_TASK_CYCLE_POINT/wrf* .
             fi
             envsub $ETC_DIR/namelist.input namelist.input
+            envsub $ETC_DIR/wrf_output.txt wrf_output.txt
             ln -sf $CYLC_TASK_SHARE_CYCLE_DIR/wrf*_d?? .
             $run_cmd wrf.exe
             mkdir -p $CYLC_WORKFLOW_SHARE_DIR/restart/$END_DATE
             mv wrfrst* $CYLC_WORKFLOW_SHARE_DIR/restart/$END_DATE
             mkdir -p $ARCHIVE_DIR/$START_DATE
-            mv wrfdiag* $ARCHIVE_DIR/$START_DATE/
+            mv wrfdiag* WRFOUT_d* $ARCHIVE_DIR/$START_DATE/
         """
 
     [[real]]
