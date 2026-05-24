@@ -5,8 +5,8 @@
     scl = 1, 3, 6, 12
 
 [scheduling]
-    initial cycle point = 2024-06-01T00:00:00
-    final cycle point = 2025-12-01T00:00:00
+    initial cycle point = 2025-11-01T00:00:00
+    final cycle point = 2026-05-01T00:00:00
 
     [[queues]]
         [[[spi_queue]]]
@@ -15,13 +15,16 @@
 
     [[graph]]
         P1M = """
-            @wall_clock => geogrid => metgrid
-            @wall_clock => ungrib => metgrid
-            metgrid => real & wrf[-P1M] => wrf 
-            wrf => add_coords => postprocess => update_archive
-            update_archive => spi<scl>
-            update_archive => spei<scl>
-            update_archive => smi<scl>
+            # @wall_clock => geogrid => metgrid
+            # @wall_clock => ungrib => metgrid
+            # metgrid => real & wrf[-P1M] => wrf 
+            # wrf => add_coords => postprocess => update_archive
+            # update_archive => spi<scl>
+            # update_archive => spei<scl>
+            # update_archive => smi<scl>
+
+            @wall_clock => download_viirs[-P1M] => download_viirs => process_ndvi
+            #download_viirs => nvdi<scl>
         """
 
 [runtime]
@@ -32,6 +35,7 @@
             mail events = failed
         [[[environment]]]
             NCL={{NCL}}
+            CYCLE_POINT_VIIRS=${CYLC_TASK_CYCLE_POINT}
 
             ETC_DIR=${CYLC_WORKFLOW_RUN_DIR}/etc
             START_DATE=${CYLC_TASK_CYCLE_POINT}
@@ -65,10 +69,34 @@
             echo "End of cycle reached"
         """
 
+    [[process_ndvi]]
+        script = """
+            cd $CYLC_WORKFLOW_WORK_DIR/$CYLC_TASK_CYCLE_POINT/download_viirs
+            prev_file=$HIST_DIR/viirs_ndvi_1982-2025_AP_mon.nc
+            cdo -setvar,ndvi -selvar,NDVI -monmean -mergetime VIIRS-Land_*.nc ndvi_${syyyy}_${smm}.nc1
+            cdo -settaxis,${syyyy}-${smm}-01,00:00:00,1day -remapbil,${prev_file} ndvi_${syyyy}_${smm}.nc1 ndvi_${syyyy}_${smm}.nc
+            mv ndvi_${syyyy}_${smm}.nc $UPDATES_DIR/
+        """
+
+    [[download_viirs]]
+        script = """
+            download_viirs.sh 
+        """
+
     [[SPI]]
         platform=localhost
         [[[environment]]]
             scl=${CYLC_TASK_PARAM_scl}
+
+    [[sni<scl>]]
+        inherit = None, SPI
+        script = """
+            set -x
+            cdo -O -setmisstoc,0 -mergetime [ -setvar,ndvi : $UPDATES_DIR/ndvi_*.nc ] updates.nc
+            cdo -O -setmisstoc,0 -mergetime -setvar,ndvi $HIST_DIR/viirs_ndvi_1982-2025_AP_mon.nc updates.nc NDVI.nc
+            
+            sni.sh NDVI.nc SNI${scl}.nc ${scl}
+        """
 
     [[smi<scl>]]
         inherit = None, SPI

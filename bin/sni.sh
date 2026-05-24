@@ -7,27 +7,16 @@ set -eux
 
 INPUT_FILE=$1
 OUTPUT_FILE=$2
-spi=$3
-scale=$4
+scale=$3
 
-start_year=1980
+spi=spi
 
 lon_name="lon"
 lat_name="lat"
-if [ "$spi" = "smi" ]; then
-  lon_name="longitude"
-  lat_name="latitude"
-fi
 
-spi_name="$spi"
+spi_name="sni"
 
-long_name="Standardized Precipitation Index (${scale})"
-if [ "$spi" = "spei" ]; then
-  long_name="Standardized Precipitation Evapotranspiration Index (${scale})"
-elif [ "$spi" = "smi" ]; then
-  long_name="Standardized Soil Moisture Index (${scale})"
-  spi=spi
-fi
+long_name="Standardized NDVI Index (${scale})"
 
 rscript=${INPUT_FILE}.R
 
@@ -45,9 +34,7 @@ library(foreach)
 
 # ---- SPI Parameters ----
 SPI_scale <- $scale
-REF_START <- c($start_year, 1)
-REF_END   <- c(2015, 12)
-Start_date <- c($start_year, 1)
+Start_date <- c(2015, 1)
 max_cores <- min(12, parallel::detectCores() - 2)
 cat("Using", max_cores, "cores\n")
 
@@ -60,7 +47,7 @@ cat("\nProcessing:", fname, "\n")
 nc <- nc_open(fpath)
 pre.lon <- ncvar_get(nc, "$lon_name")
 pre.lat <- ncvar_get(nc, "$lat_name")
-pre.raw <- ncvar_get(nc, "RAINNC")
+pre.raw <- ncvar_get(nc, "ndvi")
 nc_close(nc)
 
 pre.lon[pre.lon > 180] <- pre.lon[pre.lon > 180] - 360
