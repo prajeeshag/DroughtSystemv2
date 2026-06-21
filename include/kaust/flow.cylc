@@ -26,15 +26,8 @@
             WPS_DIR=${MY_SW}/S2S/WPS
             WRF_DIR=${MY_SW}/S2S/WRF
 
-
-    [[geogrid,ungrib,postprocess, add_coords]]
-        inherit = None, ONSHAHEEN
-        execution time limit = PT30M
-        [[[environment]]]
-        [[[directives]]]
-            --account={{projectid}}
-            --nodes = 1
-            --ntasks = 1
+    [[dl]]
+        platform=shaheen_login
 
 
     [[metgrid]]
