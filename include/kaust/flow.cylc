@@ -29,6 +29,13 @@
     [[dl]]
         platform=shaheen_login
 
+    [[postprocess]]
+        platform=shaheen
+        [[[directives]]]
+            --account={{projectid}}
+            --nodes = 1
+            --ntasks = 1
+
 
     [[metgrid]]
         inherit = None, ONSHAHEEN
