@@ -9,6 +9,7 @@ c = cdsapi.Client()
 
 app = typer.Typer()
 
+
 @app.command()
 def prs(year: int, month: int, day: int = 31):
     mon = f"{month:02d}"
@@ -88,9 +89,10 @@ def prs(year: int, month: int, day: int = 31):
 
 
 @app.command()
-def sfc(year: int, month: int):
+def sfc(year: int, month: int, day: int = 31):
     mon = f"{month:02d}"
     ndays = calendar.monthrange(year, month)[1]
+    ndays = min(day, ndays)
     days = [f"{day}" for day in range(1, ndays + 1)]
 
     output = f"{year}_{mon}_sfc.grib"

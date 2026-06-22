@@ -29,8 +29,26 @@
     [[dl]]
         platform=shaheen_login
 
+    [[add_coords]]
+        platform=shaheen
+        [[[directives]]]
+            --account={{projectid}}
+            --nodes = 1
+            --ntasks = 1
+
     [[postprocess]]
         platform=shaheen
+        [[[directives]]]
+            --account={{projectid}}
+            --nodes = 1
+            --ntasks = 1
+
+
+    [[ungrib]]
+        inherit = None, ONSHAHEEN
+        execution time limit = PT3H
+        [[[environment]]]
+            run_cmd = "srun -n 1"
         [[[directives]]]
             --account={{projectid}}
             --nodes = 1
