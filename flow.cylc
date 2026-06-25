@@ -3,30 +3,32 @@
 
 [task parameters]
     scl = 1, 3, 6, 12
-    region = ap, mena
+    region = AP, MENA
 
 [scheduling]
-    initial cycle point = 2026-01-01T00:00:00
-    final cycle point = 2026-06-01T00:00:00
+    initial cycle point = 2026-05-01T00:00:00
+    final cycle point = 2026-05-01T00:00:00
 
     [[queues]]
         [[[spi_queue]]]
-            limit = 4
+            limit = 3
             members = SPI
+    [[xtriggers]]
+        clock_trigger = wall_clock(offset=P1M10D)
 
     [[graph]]
         P1M = """
-            @wall_clock => geogrid => metgrid
-            @wall_clock => dl => ungrib => metgrid
-            metgrid => real & wrf[-P1M] => wrf 
-            wrf => add_coords
-            add_coords => postprocess
-            postprocess => update_archive
-            update_archive => spi<region><scl>
-            update_archive => spei<region><scl>
-            update_archive => smi<region><scl>
-
-            #@wall_clock => download_viirs[-P1M] => download_viirs => process_ndvi => ndvi
+            #@clock_trigger => geogrid => metgrid
+            #@clock_trigger => dl => ungrib => metgrid
+            #metgrid => real & wrf[-P1M] => wrf 
+            #wrf => add_coords
+            #add_coords => postprocess
+            #postprocess => update_archive
+            #update_archive => spi<region><scl>
+            #update_archive => spei<region><scl>
+            #update_archive => smi<region><scl>
+            #@clock_trigger => download_viirs[-P1M] => download_viirs => process_ndvi => ndvi<region>
+            ndvi<region>
         """
 
 [runtime]
@@ -51,11 +53,11 @@
             UPDATES_DIR=$DATA_ROOT/updates 
             HIST_DIR=$DATA_ROOT/hist
 
-            grid_ap=$HIST_DIR/AP/ERA5_historical_RAINNC_monthly_1980-2024.nc
-            smois_mask_ap=$HIST_DIR/AP/SMOIS_mask.nc
+            grid_AP=$HIST_DIR/AP/ERA5_historical_RAINNC_monthly_1980-2024.nc
+            smois_mask_AP=$HIST_DIR/AP/SMOIS_mask.nc
 
-            grid_mena=$HIST_DIR/MENA/ERA5_historical_RAIN_mon_1980-2024.nc
-            smois_mask_mena=$HIST_DIR/MENA/SMOIS_mask.nc
+            grid_MENA=$HIST_DIR/MENA/ERA5_historical_RAIN_mon_1980-2024.nc
+            smois_mask_MENA=$HIST_DIR/MENA/SMOIS_mask.nc
 
 
             syyyy=${START_DATE:0:4}
@@ -80,11 +82,17 @@
     [[process_ndvi]]
         script = """
             cd $CYLC_WORKFLOW_WORK_DIR/$CYLC_TASK_CYCLE_POINT/download_viirs
-            prev_file=$HIST_DIR/viirs_ndvi_1982-2025_AP_mon.nc
             cdo -setvar,ndvi -selvar,NDVI -monmean -mergetime VIIRS-Land_*.nc ndvi_${syyyy}_${smm}.nc1
-            cdo -settaxis,${syyyy}-${smm}-01,00:00:00,1day -remapbil,${prev_file} ndvi_${syyyy}_${smm}.nc1 ndvi_${syyyy}_${smm}.nc
-            mv ndvi_${syyyy}_${smm}.nc $UPDATES_DIR/
+
+            prev_file=$HIST_DIR/AP/viirs_ndvi_1982-2025_AP_mon.nc
+            cdo -settaxis,${syyyy}-${smm}-01,00:00:00,1day -remapbil,${prev_file} ndvi_${syyyy}_${smm}.nc1 ndvi_AP_${syyyy}_${smm}.nc
+            mv ndvi_AP_${syyyy}_${smm}.nc $UPDATES_DIR/
+
+            prev_file=$HIST_DIR/MENA/viirs_ndvi_1982-2025_MENA_mon.nc
+            cdo -settaxis,${syyyy}-${smm}-01,00:00:00,1day -remapbil,${prev_file} ndvi_${syyyy}_${smm}.nc1 ndvi_MENA_${syyyy}_${smm}.nc
+            mv ndvi_MENA_${syyyy}_${smm}.nc $UPDATES_DIR/
         """
+
 
     [[download_viirs]]
         script = """
@@ -96,48 +104,49 @@
         [[[environment]]]
             scl=${CYLC_TASK_PARAM_scl}
 
-    [[ndvi]]
+    [[ndvi<region>]]
         script = """
             set -x
-            cdo -O -mergetime [ -setvar,ndvi : $UPDATES_DIR/ndvi_*.nc ] updates.nc
-            cdo -O -mergetime -setvar,ndvi $HIST_DIR/viirs_ndvi_1982-2025_AP_mon.nc updates.nc NDVI.nc
+            region=${CYLC_TASK_PARAM_region}
+            cdo -O -mergetime [ -setvar,ndvi : $UPDATES_DIR/ndvi_${region}_*.nc ] updates.nc
+            cdo -O -mergetime -setvar,ndvi $HIST_DIR/${region}/viirs_ndvi_1982-2025_${region}_mon.nc updates.nc NDVI.nc
 
             cdo -ymonmean NDVI.nc mean.nc
             cdo -ymonstd NDVI.nc std.nc
             cdo -ymonsub NDVI.nc mean.nc anom.nc
-            cdo -setreftime,1900-01-01,00:00:00,days -ymondiv anom.nc std.nc ndvi_unmasked.nc
+            cdo -setmissval,-100000. -setreftime,1900-01-01,00:00:00,days -ymondiv anom.nc std.nc ndvi_unmasked.nc
 
-            cdo -setmisstoc,0 -setctomiss,1 -setmisstoc,2 ~/DATA/droughtSystemv2/ndvi_valid_mask.nc _mask.nc 
+            desert_mask=~/DATA/droughtSystemv2/masks/${region}/ndvi_desert_mask.nc
 
-            cdo -ifthenelse _mask.nc ndvi_unmasked.nc -addc,-9999 -mulc,0 ndvi_unmasked.nc ndvi.nc
-
+            cdo -ifthenelse $desert_mask -addc,-9999 -mulc,0 ndvi_unmasked.nc ndvi_unmasked.nc ndvi.nc
         """
 
-    [[smi_ap<scl>]]
+
+    [[smi_AP<scl>]]
         inherit = None, SPI
         script = """
             set -x
             cdo -O -mergetime [ -setvar,RAINNC : $UPDATES_DIR/SMOIS1_d02_*.nc ] updates.nc
-            cdo -O -mergetime -setvar,RAINNC $HIST_DIR/AP/SOILW_layer1_1980-2024_mon.nc updates.nc SMOIS1.nc
+            cdo -O -mergetime -setvar,RAINNC -setmissval,-9999. $HIST_DIR/AP/SOILW_layer1_1980-2024_mon.nc -setmissval,-9999. updates.nc SMOIS1.nc
             cdo -O -div -addc,100 SMOIS1.nc -addc,100 SMOIS1.nc mask.nc
             cdo -O -setmisstoc,0 SMOIS1.nc SMOIS2.nc
             spi.sh SMOIS2.nc SMI${scl}.nc smi ${scl}
             cdo -O -setreftime,1900-01-01,00:00:00,days -mul SMI${scl}.nc mask.nc smi_${scl}.nc
         """
 
-    [[smi_mena<scl>]]
+    [[smi_MENA<scl>]]
         inherit = None, SPI
         script = """
             set -x
             cdo -O -mergetime [ -setvar,RAINNC : $UPDATES_DIR/SMOIS1_d01_*.nc ] updates.nc
-            cdo -O -mergetime -setvar,RAINNC $HIST_DIR/MENA/SOILL_1980-2024_mon.nc updates.nc SMOIS1.nc
+            cdo -O -mergetime -setvar,RAINNC -setmissval,-9999. $HIST_DIR/MENA/SOILL_1980-2024_mon.nc -setmissval,-9999. updates.nc SMOIS1.nc
             cdo -O -div -addc,100 SMOIS1.nc -addc,100 SMOIS1.nc mask.nc
             cdo -O -setmisstoc,0 SMOIS1.nc SMOIS2.nc
             spi.sh SMOIS2.nc SMI${scl}.nc smi ${scl}
             cdo -O -setreftime,1900-01-01,00:00:00,days -mul SMI${scl}.nc mask.nc smi_${scl}.nc
         """
 
-    [[spi_ap<scl>]]
+    [[spi_AP<scl>]]
         inherit = None, SPI
         script = """
             set -x
@@ -146,7 +155,7 @@
             spi.sh RAINNC.nc SPI${scl}.nc spi ${scl}
         """
 
-    [[spi_mena<scl>]]
+    [[spi_MENA<scl>]]
         inherit = None, SPI
         script = """
             set -x
@@ -157,7 +166,7 @@
             spi.sh RAINNC.nc SPI${scl}.nc spi ${scl}
         """
 
-    [[spei_ap<scl>]]
+    [[spei_AP<scl>]]
         inherit = None, SPI
         script = """
             set -x
@@ -172,7 +181,7 @@
             spi.sh PRE-PET.nc SPEI${scl}.nc spei ${scl}
         """
 
-    [[spei_mena<scl>]]
+    [[spei_MENA<scl>]]
         inherit = None, SPI
         script = """
             set -x
@@ -195,11 +204,11 @@
             set -x
             rsync -a -P shaheen:$ARCHIVE_DIR/$START_DATE/processed/*.nc .
             for domain in d01 d02; do
-                grid=$grid_ap
-                smois_mask=$smois_mask_ap
+                grid=$grid_AP
+                smois_mask=$smois_mask_AP
                 if [ "$domain" = "d01" ]; then
-                    grid=$grid_mena
-                    smois_mask=$smois_mask_mena
+                    grid=$grid_MENA
+                    smois_mask=$smois_mask_MENA
                 fi
                 for file in *_${domain}_*.nc; do
                     setmiss=""
